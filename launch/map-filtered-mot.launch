@@ -1,0 +1,16 @@
+<launch>
+    <arg name='display'  default="true"/>
+    <arg name='trajectory_forecasting'   default="true"/>
+    <arg name='use_ros'   default="true"/>
+    <arg name='use_grid'   default="true"/>
+
+    <param name="t4ac/map-filtered-mot/display" type="bool" value="$(arg display)" />
+    <param name="t4ac/map-filtered-mot/trajectory-forecasting" type="bool" value="$(arg trajectory_forecasting)" />
+    <param name="t4ac/map-filtered-mot/use-ros" type="bool" value="$(arg use_ros)" />
+    <param name="t4ac/map-filtered-mot/use-grid" type="bool" value="$(arg use_grid)" />
+
+    <node pkg="map-filtered-mot" type="map-filtered-mot.py" name="map_filtered_mot_node" output="screen"/>
+</launch>
+
+<!-- output="screen" -->
+
