@@ -3,11 +3,9 @@
 """
 Created on Thu May  7 17:38:44 2020
 
-(CAMBIARNOS A ROS NOETIC PARA TENER SOPORTE NATIVO CON PYTHON3)
-
 @author: Carlos Gómez-Huélamo
 
-SmartMOT: Code to track the detections given by a 3D object detector (converted into Bird's Eye View (Image frame, z-axis inwards 
+SmartMOT: Code to track the detections given by a sensor fusion algorithm (converted into Bird's Eye View (Image frame, z-axis inwards 
  with the origin located at the top-left corner) using the SORT (Simple Online and Real-Time Tracking) algorithm as backbone
 
 Communications are based on ROS (Robot Operating Sytem)
@@ -62,94 +60,103 @@ from message_filters import TimeSynchronizer, Subscriber
 
 # Auxiliar variables
 
-detection_threshold = 0.3 # SET 20 TO CHECK ONLY THE DETECTIONS
+detection_threshold = 0.3
 max_age = 3
 min_hits = 1 # 1
 kitti = 0
-n = 4 # Predict n bounding boxes ahead
+n = 4 # Predict x bounding boxes ahead
+seconds_ahead = 2 # Predict all trajectories at least x seconds ahead
     
 filename = ''
 path = os.path.curdir + '/results' + filename
 header_synchro = 5
 
 class Map_Filtered_MOT:
-    def __init__(self,args,n):
+    def __init__(self,args):
         # Auxiliar variables
        
-       self.init_scene = False
-       self.use_gaussian_noise = False
-       self.filter_hdmap = True
+        self.init_scene = False
+        self.use_gaussian_noise = True
+        self.filter_hdmap = True
+        self.colours = np.random.rand(32,3)
 
-       self.display = args[0]
-       self.trajectory_prediction = args[1]
-       self.ros = args[2]
-       self.grid = False
+        # Display config
 
-       self.image_width = 0 # This value will be updated
-       self.image_height = 1000 # Pixels 
+        self.image_width = 0 # This value will be updated
+        self.image_height = 1000 # Pixels 
+        self.shapes = []
+        self.view_ahead = 0 
 
-       self.shapes = []
-       self.view_ahead = 0 
-    
-       self.n = np.zeros((n,1)) # The bounding boxes will be predicted n boxes ahead, regarding its velocity
+        # Ego-vehicle and Prediction variables
 
-       self.ego_vehicle_x, self.ego_vehicle_y = 0.0,0.0
-       self.ego_orientation_cumulative_diff = 0 # Cumulative orientation w.r.t the original odometry of the ego-vehicle (radians)
-       self.initial_angle = False
-       self.previous_angle = float(0)
-       self.pre_yaw = float(0)
-       self.current_yaw = float(0)
-       self.ego_trajectory_prediction_bb = np.zeros((5,self.n.shape[0])) # (x,y,s,r,theta) n times
+        self.n = n 
+        self.ego_vehicle_x, self.ego_vehicle_y = 0.0,0.0
+        self.ego_orientation_cumulative_diff = 0 # Cumulative orientation w.r.t the original 
+                                                 # orientation of the ego-vehicle (radians)
+        self.initial_angle = False
+        self.previous_angle = float(0)
+        self.previous_yaw = float(0)
+        self.current_yaw = float(0) 
+        self.ego_braking_distance = 0
+        self.ego_dimensions = np.array([4.4],  # Length
+                                        1.8]) # Width
+        self.seconds_ahead = seconds_ahead
 
-       self.write_video = False
-       self.video_flag = False 
-       self.start = float(0)
-       self.end = float(0)
-       
-       self.frame_no = 0
-       self.avg_fps = float(0)
+        # MOT-Prediction Callback 
 
-       self.colours = np.random.rand(32,3)
+        self.start = float(0)
+        self.end = float(0)
+        self.frame_no = 0
+        self.avg_fps = float(0)
+        self.write_video = False
+        self.video_flag = False 
 
-       # Emergency break
+        # Emergency break
 
-       self.cont = 0
-       self.collision_flag = std_msgs.msg.Bool()
-       self.collision_flag.data = False
-       self.emergency_break_timer = float(0)
-       self.nearest_object_in_route = 50000
+        self.cont = 0
+        self.collision_flag = std_msgs.msg.Bool()
+        self.collision_flag.data = False
+        self.emergency_break_timer = float(0)
+        self.nearest_object_in_route = 50000
+        self.geometric_monitorized_area = []
 
-       self.ego_braking_distance = 0
+        # Arguments from ROS params
 
-       self.rc_max = rospy.get_param("/controller/rc_max")
-       self.geometric_monitorized_area = []
+        self.display = args[0]
+        self.trajectory_prediction = args[1]
+        self.ros = args[2]
+        self.grid = args[3]
+        self.rc_max = args[4]
         
-       # ROS publishers
+        # ROS publishers
 
-       self.pub_monitorized_area = rospy.Publisher("/t4ac/perception/detection/monitorized_area_marker", visualization_msgs.msg.Marker, queue_size = 20)
-       self.pub_bev_sort_tracking_markers_list = rospy.Publisher('/t4ac/perception/tracking/obstacles_markers', visualization_msgs.msg.MarkerArray, queue_size = 20)
-       self.pub_particular_monitorized_area_markers_list = rospy.Publisher('/t4ac/perception/monitors/individual_monitorized_area', visualization_msgs.msg.MarkerArray, queue_size = 20)
-       self.pub_collision = rospy.Publisher('/t4ac/perception/monitors/predicted_collision', std_msgs.msg.Bool, queue_size = 20)
-       self.pub_nearest_object_distance = rospy.Publisher('/t4ac/perception/monitors/nearest_object_distance', std_msgs.msg.Float64, queue_size = 20)
+        self.pub_monitorized_area = rospy.Publisher("/t4ac/perception/detection/monitorized_area_marker", visualization_msgs.msg.Marker, queue_size = 20)
+        self.pub_bev_sort_tracking_markers_list = rospy.Publisher('/t4ac/perception/tracking/obstacles_markers', visualization_msgs.msg.MarkerArray, queue_size = 20)
+        self.pub_particular_monitorized_area_markers_list = rospy.Publisher('/t4ac/perception/monitors/individual_monitorized_area', visualization_msgs.msg.MarkerArray, queue_size = 20)
+        self.pub_collision = rospy.Publisher('/t4ac/perception/monitors/predicted_collision', std_msgs.msg.Bool, queue_size = 20)
+        self.pub_nearest_object_distance = rospy.Publisher('/t4ac/perception/monitors/nearest_object_distance', std_msgs.msg.Float64, queue_size = 20)
 
-       # ROS subscribers
+        # ROS subscribers
 
-       if not self.filter_hdmap:
-           self.sub_road_curvature = rospy.Subscriber("/control/rc", std_msgs.msg.Float64, self.road_curvature_callback)
-       self.detections_topic = "/t4ac/perception/detection/merged_obstacles"
-       self.odom_topic = "/localization/pose"
-       self.monitorized_lanes_topic = "/mapping_planning/monitor/lanes"
+        if not self.filter_hdmap:
+            self.sub_road_curvature = rospy.Subscriber("/control/rc", std_msgs.msg.Float64, self.road_curvature_callback)
+        self.detections_topic = "/t4ac/perception/detection/merged_obstacles"
+        self.odom_topic = "/localization/pose"
+        self.monitorized_lanes_topic = "/t4ac/mapping/monitor/lanes"
 
-       self.detections_subscriber = Subscriber(self.detections_topic, BEV_detections_list)
-       self.odom_subscriber = Subscriber(self.odom_topic, nav_msgs.msg.Odometry)
-       self.monitorized_lanes_subscriber = Subscriber(self.monitorized_lanes_topic, MonitorizedLanes)
+        self.detections_subscriber = Subscriber(self.detections_topic, BEV_detections_list)
+        self.odom_subscriber = Subscriber(self.odom_topic, nav_msgs.msg.Odometry)
+        self.monitorized_lanes_subscriber = Subscriber(self.monitorized_lanes_topic, MonitorizedLanes)
 
-       ts = TimeSynchronizer([self.detections_subscriber, self.odom_subscriber, self.monitorized_lanes_subscriber], header_synchro)
-       ts.registerCallback(self.callback)
-       
-       # Listeners
-       
-       self.listener = tf.TransformListener()
+        ts = TimeSynchronizer([self.detections_subscriber, 
+                               self.odom_subscriber, 
+                               self.monitorized_lanes_subscriber], 
+                               header_synchro)
+        ts.registerCallback(self.mot_prediction_callback)
+        
+        # Listeners
+        
+        self.listener = tf.TransformListener()
 
     def road_curvature_callback(self, msg):
         """
@@ -160,11 +167,11 @@ class Map_Filtered_MOT:
 
         self.geometric_monitorized_area
         
-        xmax = float(rc_ratio*self.ego_braking_distance*1.4)
+        xmax = float(rc_ratio*self.ego_braking_distance*1.4) # We consider a 40 % safety factor 
 
         if xmax > 30:
             xmax = 30
-        elif xmax < 12:
+        elif xmax < 12 and rc_ratio > 0.8: # rc_ratio < 0.8, we are in curve, so x_max must be reduced to 0
             xmax = 12
         
         lateral = 2.6
@@ -197,11 +204,11 @@ class Map_Filtered_MOT:
 
         self.pub_monitorized_area.publish(geometric_monitorized_area_marker)
         
-    def callback(self, detections_rosmsg, odom_rosmsg, monitorized_lanes_rosmsg):
+    def mot_prediction_callback(self, detections_rosmsg, odom_rosmsg, monitorized_lanes_rosmsg):
         """
         """
 
-        try:                                                        # Target # Pose
+        try:                                                         # Target # Pose
             (translation,quaternion) = self.listener.lookupTransform('/map', '/ego_vehicle/lidar/lidar1', rospy.Time(0)) 
             # rospy.Time(0) get us the latest available transform
             rot_matrix = tf.transformations.quaternion_matrix(quaternion)
@@ -289,14 +296,13 @@ class Map_Filtered_MOT:
         trackers = []
         dynamic_trackers = []
         static_trackers = []
-        ndt = 0
+        ndt = 0 # Number of dynamic trackers
         
         timer_rosmsg = detections_rosmsg.header.stamp.to_sec()
 
         # Predict the ego-vehicle trajectory
 
         monitors_functions.ego_vehicle_prediction(self,odom_rosmsg,output_image)
-
         print("Braking distance ego vehicle: ", float(self.ego_braking_distance))
 
         # Convert input data to bboxes to perform Multi-Object Tracking 
@@ -662,8 +668,11 @@ class Map_Filtered_MOT:
         self.odom_subscriber = Subscriber(self.odom_topic, nav_msgs.msg.Odometry)
         self.monitorized_lanes_subscriber = Subscriber(self.monitorized_lanes_topic, MonitorizedLanes)
 
-        ts = TimeSynchronizer([self.detections_subscriber, self.odom_subscriber, self.monitorized_lanes_subscriber], header_synchro)
-        ts.registerCallback(self.callback)     
+        ts = TimeSynchronizer([self.detections_subscriber, 
+                               self.odom_subscriber, 
+                               self.monitorized_lanes_subscriber], 
+                               header_synchro)
+        ts.registerCallback(self.mot_prediction_callback)   
 
 def main():
     print("Init the node")
@@ -679,12 +688,16 @@ def main():
     args.append(use_ros)
     use_grid = rospy.get_param('t4ac/map-filtered-mot/use-grid')
     args.append(use_grid)
+    rc_max = rospy.get_param("/controller/rc_max")
+    args.append(rc_max)
+
     print("Display: ", display)
     print("Trajectory forecasting: ", trajectory_forecasting)
     print("Publish real-world data: ", use_ros)
     print("Use grid: ", use_grid)
+    print("Road curvature max: ", rc_max)
     
-    Map_Filtered_MOT(args,n)
+    Map_Filtered_MOT(args)
 
     try:
         rospy.spin()

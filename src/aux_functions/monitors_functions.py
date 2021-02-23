@@ -274,7 +274,105 @@ def predict_collision(predicted_ego_vehicle,predicted_obstacle,static=None,emerg
             o = geometric_functions.iou(ego[0],obs)
             if o > 0.0:  
                 return True 
-        return False   
+        return False  
+
+def ego_vehicle_prediction_real(self, odom_rosmsg):
+    """
+    """
+
+    # Calculate vel in km/h and braking distance according to DGT Spain traffic data
+
+    self.abs_vel = math.sqrt(pow(odom_rosmsg.twist.twist.linear.x,2))
+    vel_kmh = self.abs_vel = vel_kmh * 3.6 # m/s to km/h
+    vel_angular = odom_rosmsg.twist.twist.angular.z
+
+    ego_predicted = []
+
+    print("Ego vehicle velocity: ", vel_kmh)
+
+    if abs(self.abs_vel) != 0.0: # The vehicle is moving   
+        pf = PolynomialFeatures(degree = 2)
+        self.ego_braking_distance = self.velocity_braking_distance_model.predict(pf.fit_transform([[vel_kmh]]))
+
+        seconds_required = self.ego_braking_distance/self.abs_vel
+        
+        if seconds_required < self.seconds_ahead:
+            seconds_required = self.seconds_ahead # Predict the trajectory at least x seconds ahead
+
+        for i in range(self.n.shape[0]):
+            seconds.append(float(seconds_required)/float(self.n)*(i+1))
+    else:
+        self.ego_braking_distance = 0
+        seconds = np.zeros((4,1))
+
+    # Predict ego-vehicle trajectory
+    # TODO: Incorporate an embedding of n previous samples
+
+    ## Calculate position (Global coordinates, w.r.t. /map frame)
+
+    ego_global_x = odom_rosmsg.pose.pose.position.x
+    ego_global_y = -odom_rosmsg.pose.pose.position.y
+    
+    ## Calculate orientation 
+
+    previous_angle_aux = 0
+    
+    quaternion = np.zeros((4))
+    quaternion[0] = odom_rosmsg.pose.pose.orientation.x
+    quaternion[1] = odom_rosmsg.pose.pose.orientation.y
+    quaternion[2] = odom_rosmsg.pose.pose.orientation.z
+    quaternion[3] = odom_rosmsg.pose.pose.orientation.w
+
+    euler = tf.transformations.euler_from_quaternion(quaternion)
+    self.current_yaw = euler[2]
+
+    ## Calculate forecasted bounding boxes 
+
+    s = float(self.ego_dimensions[0]) * self.ego_dimensions[1] # Area of the bounding box
+    r = float(self.ego_dimensions[1]) / self.ego_dimensions[0] # Aspect ratio
+
+    forecasted_x = np.zeros((self.n,5)) # n times (x,y,s,r,theta), x means ego-vehicle state
+
+    for i,second in enumerate(seconds):
+        if i == 0:
+            angle = self.current_yaw
+            diff = self.current_yaw - self.previous_yaw
+            self.previous_yaw = self.current_yaw
+        else:
+            angle = forecasted_x[i-1,4]
+
+        # global x,y centroid, scale and aspect ratio (assumed to be constant) and orientation
+
+        forecasted_x[i,0] = ego_global_x + self.abs_vel*seconds[i]*math.cos(angle)
+        forecasted_x[i,1] = ego_global_y + self.abs_vel*seconds[i]*math.sin(angle)
+        forecasted_x[i,2] = s 
+        forecasted_x[i,3] = r 
+        forecasted_x[i,4] = angle + vel_angular*seconds[i]*math.cos(angle)
+
+        forecasted_bbox = sort_functions.convert_x_to_bbox(ego_trajectory_prediction_bb[:,i])
+        ego_forecasted_bboxes.append(forecasted_bbox)
+
+    # Visualize forecasted trajectory
+
+    for forecasted_bbox in ego_forecasted_bboxes:
+        
+
+
+    geometric_functions.compute_corners(tracker,self.shapes,aux_centroid)
+
+    # Visualize
+
+    if self.display:
+        for j in range(self.n.shape[0]):           
+            e = self.ego_predicted[j][0]
+            e1c, e2c, e3c, e4c = geometric_functions.compute_corners(e)
+  
+            contour = np.array([[e1c[0],e1c[1]],[e2c[0],e2c[1]],[e3c[0],e3c[1]],[e4c[0],e4c[1]]])
+            centroid = (e[0].astype(int),e[1].astype(int)) # tracker centroid
+            color = (0,0,255)
+            my_thickness = 2
+            geometric_functions.draw_rotated(contour,centroid,img,my_thickness,color)
+
 
 def ego_vehicle_prediction(self, odom_rosmsg, img):
     """ 
@@ -314,20 +412,23 @@ def ego_vehicle_prediction(self, odom_rosmsg, img):
     vel_km_h = self.abs_vel*3.6 # m/s to km/h
 
     print("Ego vehicle vel: ", vel_km_h)
+
+    seconds = []
+
     if abs(self.abs_vel) != 0.0: # The vehicle is moving   
         pf = PolynomialFeatures(degree = 2)
         self.ego_braking_distance = self.velocity_braking_distance_model.predict(pf.fit_transform([[vel_km_h]]))
         
-        seconds_required = self.ego_braking_distance/self.abs_vel
+        seconds_required = self.ego_braking_distance/self.abs_vel # Seconds required to break according to DGT Spain
 
-        if seconds_required < 3:
-            seconds_required = 3 # Predict the trajectory at least 3 seconds ahead
+        if seconds_required < self.seconds_ahead:
+            seconds_required = self.seconds_ahead # Predict the trajectory at least 3 seconds ahead
 
         for i in range(self.n.shape[0]):
-            self.n[i] = float(seconds_required)/float(self.n.shape[0])*(i+1)
+            seconds.append(float(seconds_required)/float(self.n)*(i+1))
     else:
         self.ego_braking_distance = 0
-        self.n = np.zeros((4,1))
+        seconds = np.zeros((4,1))
     
     # Predict
     
@@ -342,7 +443,7 @@ def ego_vehicle_prediction(self, odom_rosmsg, img):
     euler = tf.transformations.euler_from_quaternion(quaternion)
     self.current_yaw = euler[2]
 
-    for i in range(self.n.shape[0]):  
+    for i in range(self.n):  
         if i>0:
             previous_angle_aux = self.ego_trajectory_prediction_bb[4,i-1]
         else:               
@@ -357,11 +458,11 @@ def ego_vehicle_prediction(self, odom_rosmsg, img):
                 
             self.pre_yaw = self.current_yaw
 
-        self.ego_trajectory_prediction_bb[0,i] = BEV_image_centroid_ego[0] + self.ego_vel_px*self.n[i]*math.cos(previous_angle_aux) # x centroid
-        self.ego_trajectory_prediction_bb[1,i] = BEV_image_centroid_ego[1] + self.ego_vel_px*self.n[i]*math.sin(previous_angle_aux) # y centroid
+        self.ego_trajectory_prediction_bb[0,i] = BEV_image_centroid_ego[0] + self.ego_vel_px*seconds[i]*math.cos(previous_angle_aux) # x centroid
+        self.ego_trajectory_prediction_bb[1,i] = BEV_image_centroid_ego[1] + self.ego_vel_px*seconds[i]*math.sin(previous_angle_aux) # y centroid
         self.ego_trajectory_prediction_bb[2,i] = s # s (scale) is assumed to be constant for the ego-vehicle
         self.ego_trajectory_prediction_bb[3,i] = r # r (aspect ratio) is assumed to be constant for the ego-vehicle
-        self.ego_trajectory_prediction_bb[4,i] = self.previous_angle +  self.ego_vz_px*self.n[i] # Theta (orientation). 
+        self.ego_trajectory_prediction_bb[4,i] = self.previous_angle +  self.ego_vz_px*seconds[i] # Theta (orientation). 
         # Note that the ego-vehicle is initially up-right according to the image
         
         e = sort_functions.convert_x_to_bbox(self.ego_trajectory_prediction_bb[:,i])

@@ -89,6 +89,37 @@ def rotz(t):
                      [s,   c,  0],
                      [0,   0,  1]])
 
+def compute_corners_real(bbox,shapes=None,aux_centroid=None):
+    """
+    Compute the corners of the rectangle given its x,y centroid, width and length and
+    its rotation (clockwise if you see the screen, according to OpenCV)
+    
+    If real_world is not None, compute the length and witdth of the real world tracker based 
+    on the tracker state (Bird's Eye View camera frame)
+    """
+    
+    rotation = bbox[4]
+    
+    if rotation > math.pi:
+        rotation = rotation - math.pi
+    
+    R = rotz(rotation)
+
+    # 3D bounding box corners
+
+    x, y, w, l = bbox[0], bbox[1], bbox[2], bbox[3]
+
+    x_corners = [-l/2,-l/2,l/2,l/2]
+    y_corners = [w/2,-w/2,w/2,-w/2]
+    z_corners = [0,0,0,0]
+
+    corners_3d = np.vstack([x_corners,y_corners,z_corners])
+    corners_3d = np.dot(R, corners_3d)[0:2]
+    corners_3d = corners_3d + np.vstack([x,y])
+    
+    print("corners 3d: ", corners_3d)
+    return corners_3d
+
 def compute_corners(bbox,shapes=None,aux_centroid=None):
     """
     Compute the corners of the rectangle given its x,y centroid, width and length and

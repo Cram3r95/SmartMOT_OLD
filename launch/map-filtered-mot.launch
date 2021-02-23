@@ -1,8 +1,8 @@
 <launch>
-    <arg name='display'  default="true"/>
+    <arg name='display'  default="false"/>
     <arg name='trajectory_forecasting'   default="true"/>
     <arg name='use_ros'   default="true"/>
-    <arg name='use_grid'   default="true"/>
+    <arg name='use_grid'   default="false"/>
 
     <param name="t4ac/map-filtered-mot/display" type="bool" value="$(arg display)" />
     <param name="t4ac/map-filtered-mot/trajectory-forecasting" type="bool" value="$(arg trajectory_forecasting)" />

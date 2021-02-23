@@ -359,7 +359,6 @@ class Sort(object):
 
         if len(monitorized_area_colours) == len(self.particular_monitorized_area_list):
             for i, area in enumerate(self.particular_monitorized_area_list):
-                print("entro")
                 particular_monitorized_area_marker = visualization_msgs.msg.Marker()
 
                 particular_monitorized_area_marker.header.frame_id = "/map"
@@ -369,7 +368,7 @@ class Sort(object):
                 particular_monitorized_area_marker.lifetime = rospy.Duration.from_sec(1)
                 particular_monitorized_area_marker.id = i
                 particular_monitorized_area_marker.type = visualization_msgs.msg.Marker.LINE_STRIP
-                print("i: ", i)
+
                 color = monitorized_area_colours[i]
 
                 particular_monitorized_area_marker.color.r = color[2]
@@ -468,20 +467,20 @@ def convert_bbox_to_z(bbox):
   return np.array([x,y,s,r,theta]).reshape((5,1))
 
 def convert_x_to_bbox(x,score=None):
-  """
-  Takes a bounding box in the centre form [x,y,s,r,theta] and returns it in the form
-  [x,y,w,l,theta] where x, y are the centroid, w and l the bounding box dimensions (in pixels)
-  and theta is the bounding box angle
-  """
+    """
+    Takes a bounding box in the centre form [x,y,s,r,theta] and returns it in the form
+    [x,y,w,l,theta] where x, y are the centroid, w and l the bounding box dimensions (in pixels)
+    and theta is the bounding box angle
+    """
 
-  w = np.sqrt(x[2]*x[3])
-  h = x[2]/w
-  theta = x[4]
+    w = np.sqrt(x[2]*x[3])
+    h = x[2]/w
+    theta = x[4]
 
-  if(score==None):
-    return np.array([x[0],x[1],w,h,theta]).reshape((1,5))
-  else:
-    return np.array([x[0],x[1],w,h,theta,score]).reshape((1,6))
+    if not score:
+        return np.array([x[0],x[1],w,h,theta]).reshape((1,5))
+    else:
+        return np.array([x[0],x[1],w,h,theta,score]).reshape((1,6))
 
 def bbox_to_xywh_cls_conf(self,bbox_detections,odom_rosmsg,detection_threshold,img): 
     """
