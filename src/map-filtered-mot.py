@@ -7,7 +7,7 @@ Created on Thu May  7 17:38:44 2020
 
 @author: Carlos Gómez-Huélamo
 
-Code to track the detections given by a 3D object detector (converted into Bird's Eye View (Image frame, z-axis inwards 
+SmartMOT: Code to track the detections given by a 3D object detector (converted into Bird's Eye View (Image frame, z-axis inwards 
  with the origin located at the top-left corner) using the SORT (Simple Online and Real-Time Tracking) algorithm as backbone
 
 Communications are based on ROS (Robot Operating Sytem)
