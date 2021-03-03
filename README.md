@@ -47,5 +47,10 @@ Coming soon ...
   <img src="media/simulation_example.jpg" width="400" height="300" />
 </p>
 
-![QR_50_without](media/SmartMOT_Unexpected_Pedestrian_use_case_at_50_kmh.gif)
-![QR_30_with](media/SmartMOT_Unexpected_Pedestrian_use_case_with_adversaries_at_30_kmh.gif)
+<p align="center">
+  <img src="media/SmartMOT_Unexpected_Pedestrian_use_case_at_50_kmh.gif" alt="animated" />
+</p>
+
+<p align="center">
+  <img src="media/SmartMOT_Unexpected_Pedestrian_use_case_with_adversaries_at_30_kmh.gif" alt="animated" />
+</p>
