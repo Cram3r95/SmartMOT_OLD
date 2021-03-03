@@ -97,7 +97,7 @@ def compute_corners_real(bbox,shapes=None,aux_centroid=None):
     If real_world is not None, compute the length and witdth of the real world tracker based 
     on the tracker state (Bird's Eye View camera frame)
     """
-    
+  
     rotation = bbox[4]
     
     if rotation > math.pi:
@@ -117,7 +117,6 @@ def compute_corners_real(bbox,shapes=None,aux_centroid=None):
     corners_3d = np.dot(R, corners_3d)[0:2]
     corners_3d = corners_3d + np.vstack([x,y])
     
-    print("corners 3d: ", corners_3d)
     return corners_3d
 
 def compute_corners(bbox,shapes=None,aux_centroid=None):

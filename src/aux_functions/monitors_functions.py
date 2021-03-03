@@ -17,16 +17,18 @@ Note that
 
 """
 
+import cv2
 import math
 import numpy as np
-import cv2
 from shapely.geometry import Polygon
+import time
 
 # ROS imports
 
+import geometry_msgs.msg
 import rospy
-import tf 
 import nav_msgs.msg
+import tf 
 import visualization_msgs.msg
 
 from t4ac_msgs.msg import Node
@@ -283,12 +285,12 @@ def ego_vehicle_prediction_real(self, odom_rosmsg):
     # Calculate vel in km/h and braking distance according to DGT Spain traffic data
 
     self.abs_vel = math.sqrt(pow(odom_rosmsg.twist.twist.linear.x,2))
-    vel_kmh = self.abs_vel = vel_kmh * 3.6 # m/s to km/h
+    vel_kmh = self.abs_vel * 3.6 # m/s to km/h
     vel_angular = odom_rosmsg.twist.twist.angular.z
 
-    ego_predicted = []
-
     print("Ego vehicle velocity: ", vel_kmh)
+
+    seconds = []
 
     if abs(self.abs_vel) != 0.0: # The vehicle is moving   
         pf = PolynomialFeatures(degree = 2)
@@ -299,7 +301,7 @@ def ego_vehicle_prediction_real(self, odom_rosmsg):
         if seconds_required < self.seconds_ahead:
             seconds_required = self.seconds_ahead # Predict the trajectory at least x seconds ahead
 
-        for i in range(self.n.shape[0]):
+        for i in range(self.n):
             seconds.append(float(seconds_required)/float(self.n)*(i+1))
     else:
         self.ego_braking_distance = 0
@@ -328,6 +330,8 @@ def ego_vehicle_prediction_real(self, odom_rosmsg):
 
     ## Calculate forecasted bounding boxes 
 
+    ego_forecasted_bboxes = []
+
     s = float(self.ego_dimensions[0]) * self.ego_dimensions[1] # Area of the bounding box
     r = float(self.ego_dimensions[1]) / self.ego_dimensions[0] # Aspect ratio
 
@@ -349,30 +353,54 @@ def ego_vehicle_prediction_real(self, odom_rosmsg):
         forecasted_x[i,3] = r 
         forecasted_x[i,4] = angle + vel_angular*seconds[i]*math.cos(angle)
 
-        forecasted_bbox = sort_functions.convert_x_to_bbox(ego_trajectory_prediction_bb[:,i])
+        forecasted_bbox = sort_functions.convert_x_to_bbox(forecasted_x[i,:])
         ego_forecasted_bboxes.append(forecasted_bbox)
 
     # Visualize forecasted trajectory
 
-    for forecasted_bbox in ego_forecasted_bboxes:
-        
+    self.ego_trajectory_forecasted_marker_list.markers = []
 
+    for i,forecasted_bbox in enumerate(ego_forecasted_bboxes):
+        corners_3d = geometric_functions.compute_corners_real(forecasted_bbox[0])
 
-    geometric_functions.compute_corners(tracker,self.shapes,aux_centroid)
+        forecasted_marker = visualization_msgs.msg.Marker()
 
-    # Visualize
+        forecasted_marker.header.frame_id = "/map"
+        forecasted_marker.header.stamp = odom_rosmsg.header.stamp
+        forecasted_marker.ns = "ego_vehicle_forecasted_trajectory"
+        forecasted_marker.action = forecasted_marker.ADD
+        forecasted_marker.lifetime = rospy.Duration.from_sec(1)
+        forecasted_marker.id = i
+        forecasted_marker.type = visualization_msgs.msg.Marker.LINE_STRIP
 
-    if self.display:
-        for j in range(self.n.shape[0]):           
-            e = self.ego_predicted[j][0]
-            e1c, e2c, e3c, e4c = geometric_functions.compute_corners(e)
-  
-            contour = np.array([[e1c[0],e1c[1]],[e2c[0],e2c[1]],[e3c[0],e3c[1]],[e4c[0],e4c[1]]])
-            centroid = (e[0].astype(int),e[1].astype(int)) # tracker centroid
-            color = (0,0,255)
-            my_thickness = 2
-            geometric_functions.draw_rotated(contour,centroid,img,my_thickness,color)
+        forecasted_marker.color.r = 1.0
+        forecasted_marker.color.g = 0.0
+        forecasted_marker.color.b = 0.0
+        forecasted_marker.color.a = 1.0
 
+        forecasted_marker.scale.x = 0.25
+        forecasted_marker.pose.orientation.w = 1.0
+
+        order = [0,1,3,2]
+
+        for j in order:
+            point = geometry_msgs.msg.Point()
+
+            point.x = corners_3d[0][j]
+            point.y = -corners_3d[1][j]
+            point.z = 0.2
+
+            forecasted_marker.points.append(point)
+
+        point = geometry_msgs.msg.Point()
+        point.x = corners_3d[0][0]
+        point.y = -corners_3d[1][0]
+
+        forecasted_marker.points.append(point) # To close the polygon
+
+        self.ego_trajectory_forecasted_marker_list.markers.append(forecasted_marker)
+
+    self.pub_ego_vehicle_forecasted_trajectory_markers_list.publish(self.ego_trajectory_forecasted_marker_list)
 
 def ego_vehicle_prediction(self, odom_rosmsg, img):
     """ 

@@ -98,8 +98,9 @@ class Map_Filtered_MOT:
         self.previous_yaw = float(0)
         self.current_yaw = float(0) 
         self.ego_braking_distance = 0
-        self.ego_dimensions = np.array([4.4],  # Length
+        self.ego_dimensions = np.array([4.4,  # Length
                                         1.8]) # Width
+        self.ego_trajectory_forecasted_marker_list = visualization_msgs.msg.MarkerArray()
         self.seconds_ahead = seconds_ahead
 
         # MOT-Prediction Callback 
@@ -133,6 +134,7 @@ class Map_Filtered_MOT:
         self.pub_monitorized_area = rospy.Publisher("/t4ac/perception/detection/monitorized_area_marker", visualization_msgs.msg.Marker, queue_size = 20)
         self.pub_bev_sort_tracking_markers_list = rospy.Publisher('/t4ac/perception/tracking/obstacles_markers', visualization_msgs.msg.MarkerArray, queue_size = 20)
         self.pub_particular_monitorized_area_markers_list = rospy.Publisher('/t4ac/perception/monitors/individual_monitorized_area', visualization_msgs.msg.MarkerArray, queue_size = 20)
+        self.pub_ego_vehicle_forecasted_trajectory_markers_list = rospy.Publisher('/t4ac/perception/prediction/ego_vehicle_forecasted_trajectory', visualization_msgs.msg.MarkerArray, queue_size = 20)
         self.pub_collision = rospy.Publisher('/t4ac/perception/monitors/predicted_collision', std_msgs.msg.Bool, queue_size = 20)
         self.pub_nearest_object_distance = rospy.Publisher('/t4ac/perception/monitors/nearest_object_distance', std_msgs.msg.Float64, queue_size = 20)
 
@@ -141,7 +143,7 @@ class Map_Filtered_MOT:
         if not self.filter_hdmap:
             self.sub_road_curvature = rospy.Subscriber("/control/rc", std_msgs.msg.Float64, self.road_curvature_callback)
         self.detections_topic = "/t4ac/perception/detection/merged_obstacles"
-        self.odom_topic = "/localization/pose"
+        self.odom_topic = "/t4ac/localization/pose"
         self.monitorized_lanes_topic = "/t4ac/mapping/monitor/lanes"
 
         self.detections_subscriber = Subscriber(self.detections_topic, BEV_detections_list)
@@ -302,11 +304,12 @@ class Map_Filtered_MOT:
 
         # Predict the ego-vehicle trajectory
 
-        monitors_functions.ego_vehicle_prediction(self,odom_rosmsg,output_image)
+        monitors_functions.ego_vehicle_prediction_real(self,odom_rosmsg)
+        # monitors_functions.ego_vehicle_prediction(self,odom_rosmsg,output_image)
         print("Braking distance ego vehicle: ", float(self.ego_braking_distance))
 
         # Convert input data to bboxes to perform Multi-Object Tracking 
-
+        """
         #print("\nNumer of total detections: ", len(detections_rosmsg.bev_detections_list))
         bboxes_features,types = sort_functions.bbox_to_xywh_cls_conf(self,detections_rosmsg,odom_rosmsg,detection_threshold,output_image)
         #print("Number of relevant detections: ", len(bboxes_features)) # score > detection_threshold
@@ -522,7 +525,7 @@ class Map_Filtered_MOT:
             self.nearest_object_in_route = 50000
             nearest_distance.data = float(self.nearest_object_in_route)
 
-         
+        """
         self.end = time.time()
                 
         fps = 1/(self.end-self.start)
