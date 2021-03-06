@@ -173,13 +173,20 @@ class AB4COGT2SORT():
                     #obj.z_corners_3D = [corners_3d[2,0], corners_3d[2,1], corners_3d[2,2], corners_3d[2,3], corners_3d[2,4], corners_3d[2,5], corners_3d[2,6], corners_3d[2,7]]
                     
                     # rotate and translate 3d bounding box
-                    x_bev = -xyz[1]
-                    y_bev = -xyz[0]
+                    #x_bev = -xyz[1]
+                    #y_bev = -xyz[0]
+
+                    x_bev = xyz[0]
+                    y_bev = xyz[1]
+
+
+
+
                     #corners_3d = np.dot(R, np.vstack([x_corners,y_corners,z_corners]))[0:2]
                     #corners_3d = corners_3d + np.vstack([x_bev, y_bev])
                     
-                    obj.x = x_bev   #in BEV coordinates
-                    obj.y = y_bev   #in BEV coordinates
+                    obj.x = x_bev   #in LiDAR BEV coordinates
+                    obj.y = y_bev   #in LiDAR BEV coordinates
                     
                     obj.tl_br = [0,0,0,0] #2D bbox top-left, bottom-right  xy coordinates
                     obj.x_corners = [corners_3d[0,0], corners_3d[0,1], corners_3d[0,2], corners_3d[0,3]] #Array of x coordinates (upper left, upper right, lower left, lower right)

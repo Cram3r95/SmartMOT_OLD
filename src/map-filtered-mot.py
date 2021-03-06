@@ -78,6 +78,7 @@ class Map_Filtered_MOT:
         self.init_scene = False
         self.use_gaussian_noise = True
         self.filter_hdmap = True
+        self.detection_threshold = detection_threshold
         self.colours = np.random.rand(32,3)
 
         # Display config
@@ -304,30 +305,32 @@ class Map_Filtered_MOT:
 
         # Predict the ego-vehicle trajectory
 
-        monitors_functions.ego_vehicle_prediction_real(self,odom_rosmsg)
-        # monitors_functions.ego_vehicle_prediction(self,odom_rosmsg,output_image)
+        monitors_functions.ego_vehicle_prediction(self,odom_rosmsg)
         print("Braking distance ego vehicle: ", float(self.ego_braking_distance))
 
         # Convert input data to bboxes to perform Multi-Object Tracking 
-        """
-        #print("\nNumer of total detections: ", len(detections_rosmsg.bev_detections_list))
-        bboxes_features,types = sort_functions.bbox_to_xywh_cls_conf(self,detections_rosmsg,odom_rosmsg,detection_threshold,output_image)
-        #print("Number of relevant detections: ", len(bboxes_features)) # score > detection_threshold
 
+        print("\nNumer of total detections: ", len(detections_rosmsg.bev_detections_list))
+        bboxes_features,types = sort_functions.bbox_to_xywh_cls_conf(self,detections_rosmsg)
+        print("Number of relevant detections: ", len(bboxes_features)) # score > detection_threshold
+        
         ## Multi-Object Tracking
 
         # TODO: Publish on tracked_obstacle message instead of visualization marker
         # TODO: Evaluate the predicted position to predict its influence in a certain use case
 
+        ego_vel_px = 0 # TODO: Delete this
+        angle_bb = 0 # TODO: Delete this
+
         if (len(bboxes_features) > 0): # At least one object was detected
             trackers,object_types,object_scores,object_observation_angles,dynamic_trackers,static_trackers = self.mot_tracker.update(bboxes_features,types,
-                                                                                                                                     self.ego_vel_px,
+                                                                                                                                     ego_vel_px,
                                                                                                                                      self.tf_map2lidar,
                                                                                                                                      self.shapes,
                                                                                                                                      self.scale_factor,
                                                                                                                                      monitorized_lanes_rosmsg,
                                                                                                                                      timer_rosmsg,
-                                                                                                                                     self.angle_bb,
+                                                                                                                                     angle_bb,
                                                                                                                                      self.geometric_monitorized_area)
 
 
@@ -358,7 +361,7 @@ class Map_Filtered_MOT:
                     monitorized_area_colours.append(color)
 
                     if self.ros:
-                        world_features = monitors_functions.tracker_to_topic(self,tracker,object_type,color) # world_features (w,l,h,x,y,z,id)
+                        world_features = monitors_functions.tracker_to_topic_real(self,tracker,object_type,color) # world_features (w,l,h,x,y,z,id)
                         #print("WF: ", world_features)
                         if kitti:
                             num_image = detections_rosmsg.header.seq-1 # Number of image in the dataset, e.g. 0000.txt -> 0
@@ -372,9 +375,9 @@ class Map_Filtered_MOT:
                     label = 'ID %06d'%tracker[5].astype(int)
                     cv2.putText(output_image,label,(tracker[0].astype(int),tracker[1].astype(int)-20), cv2.FONT_HERSHEY_PLAIN, 1.5, [255,255,255], 2)
                     cv2.putText(output_image,object_type,(tracker[0].astype(int),tracker[1].astype(int)-40), cv2.FONT_HERSHEY_PLAIN, 1.5, [255,255,255], 2)
-
+                
                     # Evaluate if there is some obstacle in lane and calculate nearest distance
-     
+                    
                     if self.filter_hdmap:
                         if tracker[-1]: # In route, last element of the array 
                             trackers_in_route += 1
@@ -428,7 +431,7 @@ class Map_Filtered_MOT:
                             print("distance: ", distance_to_object)
                             if distance_to_object < self.nearest_object_in_route:
                                 self.nearest_object_in_route = distance_to_object
-
+                    
                 print("Collision: ", self.collision_flag.data)
                 print("trackers in route: ", trackers_in_route)
                 print("Distance nearest: ", self.nearest_object_in_route)
@@ -504,6 +507,7 @@ class Map_Filtered_MOT:
                         message = 'Predicted collision with object: ' + str(collision_id_list[0])
     
                     cv2.putText(output_image,message,(30,140), cv2.FONT_HERSHEY_PLAIN, 1.5, [255,255,255], 2) # Predicted collision message 
+                
             else:
                 print("\033[1;33m"+"No object to track"+'\033[0;m')
                 monitors_functions.empty_trackers_list(self)  
@@ -525,7 +529,7 @@ class Map_Filtered_MOT:
             self.nearest_object_in_route = 50000
             nearest_distance.data = float(self.nearest_object_in_route)
 
-        """
+        
         self.end = time.time()
                 
         fps = 1/(self.end-self.start)
@@ -554,7 +558,6 @@ class Map_Filtered_MOT:
         self.pub_collision.publish(self.collision_flag)         
         self.pub_nearest_object_distance.publish(nearest_distance)
 
-        print("moni: ", len(monitorized_area_colours))
         self.particular_monitorized_area_list = self.mot_tracker.get_particular_monitorized_area_list(detections_rosmsg.header.stamp,
                                                                                                       monitorized_area_colours)
         self.pub_particular_monitorized_area_markers_list.publish(self.particular_monitorized_area_list)

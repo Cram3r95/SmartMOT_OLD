@@ -278,13 +278,13 @@ def predict_collision(predicted_ego_vehicle,predicted_obstacle,static=None,emerg
                 return True 
         return False  
 
-def ego_vehicle_prediction_real(self, odom_rosmsg):
+def ego_vehicle_prediction(self, odom_rosmsg):
     """
     """
 
     # Calculate vel in km/h and braking distance according to DGT Spain traffic data
 
-    self.abs_vel = math.sqrt(pow(odom_rosmsg.twist.twist.linear.x,2))
+    self.abs_vel = math.sqrt(pow(odom_rosmsg.twist.twist.linear.x,2)+pow(odom_rosmsg.twist.twist.linear.y,2))
     vel_kmh = self.abs_vel * 3.6 # m/s to km/h
     vel_angular = odom_rosmsg.twist.twist.angular.z
 
@@ -319,11 +319,14 @@ def ego_vehicle_prediction_real(self, odom_rosmsg):
 
     previous_angle_aux = 0
     
+    # Given:    Right Hand: {w,x,y,z} # Real-world or standard systems
+    # Convert:  Left Hand: {-w,z,y,x} # CARLA
+
     quaternion = np.zeros((4))
     quaternion[0] = odom_rosmsg.pose.pose.orientation.x
     quaternion[1] = odom_rosmsg.pose.pose.orientation.y
     quaternion[2] = odom_rosmsg.pose.pose.orientation.z
-    quaternion[3] = odom_rosmsg.pose.pose.orientation.w
+    quaternion[3] = -odom_rosmsg.pose.pose.orientation.w
 
     euler = tf.transformations.euler_from_quaternion(quaternion)
     self.current_yaw = euler[2]
@@ -408,6 +411,71 @@ def ego_vehicle_prediction_real(self, odom_rosmsg):
 
 # TODO: Use custom topic to public additional information?
 # TODO: Wireframe (using line_strip) to paint the trajectory prediction
+
+def tracker_to_topic_real(self,tracker,type_object,color,j=None):
+    """
+    Fill the obstacle features using real world metrics. Tracker presents a predicted state vector 
+    (x,y,w,l,theta) in pixels, in addition to its ID. The x,y,w,l must be trasformed into meters.
+    """
+    tracked_obstacle = visualization_msgs.msg.Marker()
+
+    tracked_obstacle.header.frame_id = "/map"
+    tracked_obstacle.header.stamp = rospy.Time.now()
+    tracked_obstacle.ns = "tracked_obstacles"
+    tracked_obstacle.action = tracked_obstacle.ADD
+
+    if type_object == "Pedestrian": 
+        tracked_obstacle.type = tracked_obstacle.CYLINDER
+    else:
+        tracked_obstacle.type = tracked_obstacle.CUBE
+        
+    tracked_obstacle.id = tracker[5].astype(int)
+
+    # TODO: Fix this estimation
+    real_world_x = tracker[0]
+    real_world_y = tracker[1]
+    real_world_z = -1.7 # TODO: 3D Object Detector information?
+    real_world_w = 1
+    real_world_l = 1
+    real_world_h = 1.7 # TODO: 3D Object Detector information?
+    
+    tracked_obstacle.pose.position.x = real_world_x 
+    tracked_obstacle.pose.position.y = real_world_y
+    tracked_obstacle.pose.position.z = 0.0
+    
+    tracked_obstacle.scale.x = 0.7
+    tracked_obstacle.scale.y = 0.7
+    tracked_obstacle.scale.z = 1.5
+    
+    quaternion = tf.transformations.quaternion_from_euler(0,0,-tracker[4]) # The orientation is exactly the opposite since
+    # we are going to publish this object in ROS (LiDAR frame) but we have tracked it using a KF/HA based on BEV camera perspective
+    
+    tracked_obstacle.pose.orientation.x = quaternion[0]
+    tracked_obstacle.pose.orientation.y = quaternion[1]
+    tracked_obstacle.pose.orientation.z = quaternion[2]
+    tracked_obstacle.pose.orientation.w = quaternion[3]
+    
+    if type_object == "trajectory_prediction":
+        tracked_obstacle.id = tracker[5].astype(int)*100 + j
+        tracked_obstacle.color.a = 0.2
+ 
+    else:
+        tracked_obstacle.color.a = 1.0
+        
+    tracked_obstacle.color.r = color[2]
+    tracked_obstacle.color.g = color[1]
+    tracked_obstacle.color.b = color[0]
+
+    tracked_obstacle.lifetime = rospy.Duration(1.0) # 1 second
+
+    self.trackers_marker_list.markers.append(tracked_obstacle)
+    
+    if type_object != "trajectory_prediction":
+        ret = [real_world_h,real_world_w,real_world_l,real_world_x,real_world_y,real_world_z,tracker[5].astype(int)]
+        return ret
+    else:
+        return
+
 def tracker_to_topic(self,tracker,type_object,color,j=None):
     """
     Fill the obstacle features using real world metrics. Tracker presents a predicted state vector 

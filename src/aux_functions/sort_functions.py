@@ -145,7 +145,7 @@ class Sort(object):
                 trk.update(dets[d,:])
                 
                 # Get the current global position 
-
+                """
                 real_world_x, real_world_y, _, _ = geometric_functions.pixels2realworld(self,trk,shapes)
 
                 aux_array = np.zeros((1,9))
@@ -156,6 +156,19 @@ class Sort(object):
 
                 trk.current_pos[:2,0] = current_pos[:2,0] # x,y global centroid
                 trk.current_pos[2,0] = current_pos[4,0] # global orientation
+                """
+
+                #print("kf: ", trk.kf.x, trk.kf.x.shape)
+                trk.current_pos[:2,0] = trk.kf.x[:2,0]
+                trk.current_pos[2,0] = trk.kf.x[4]
+
+
+
+
+
+
+
+
 
                 if self.filter_hdmap:
                 # Check if it is inside the monitorized lanes
@@ -195,6 +208,10 @@ class Sort(object):
                                     # Get the predicted global position 
 
                                     predicted_bb = trk.trajectory_prediction_bb[:,-1]
+
+
+
+                                    """
                                     real_world_x, real_world_y, _, _ = geometric_functions.pixels2realworld_prediction(self,predicted_bb,shapes)
 
                                     aux_array = np.zeros((1,9))
@@ -205,12 +222,23 @@ class Sort(object):
 
                                     trk.current_pos[:2,0] = current_pos[:2,0] # x,y global centroid
                                     trk.current_pos[2,0] = current_pos[4,0] # global orientation
+                                    """
+
+
+
+
+
+
+
+
+
+
 
                                     # Check if it is inside the monitorized lanes
 
                                     detection = Node()
-                                    detection.x = trk.current_pos[0,0]
-                                    detection.y = -trk.current_pos[1,0]
+                                    detection.x = predicted_bb[0]
+                                    detection.y = -predicted_bb[1]
 
                                     for lane in monitorized_lanes.lanes: 
                                         if len(lane.left.way) >= 2 and (lane.role == "current" or lane.role == "front"):
@@ -257,6 +285,8 @@ class Sort(object):
         # 3. Create and initialise new trackers for unmatched detections (if these detections are inside a monitorized_lane)
 
         for i in unmatched_dets:
+            print("total dets: ", dets)
+            print("dets: ", dets[i,:])
             aux = store_global_coordinates(tf_map2lidar,dets[i,:].reshape(1,9))
             type_object = types[i]
 
@@ -482,18 +512,19 @@ def convert_x_to_bbox(x,score=None):
     else:
         return np.array([x[0],x[1],w,h,theta,score]).reshape((1,6))
 
-def bbox_to_xywh_cls_conf(self,bbox_detections,odom_rosmsg,detection_threshold,img): 
+def bbox_to_xywh_cls_conf(self,detections_rosmsg):
     """
     """
+
     bboxes = []
     types = []
     k = 0
-    
+
     # Evaluate detections
-    
-    for bbox_object in bbox_detections.bev_detections_list:
-        if (bbox_object.score >= detection_threshold):
-            
+
+    for bbox_object in detections_rosmsg.bev_detections_list:
+        if (bbox_object.score >= self.detection_threshold):
+
             bbox_object.x_corners = np.array(bbox_object.x_corners) # Tuple to np.ndarray
             bbox_object.y_corners = np.array(bbox_object.y_corners) 
 
@@ -511,85 +542,38 @@ def bbox_to_xywh_cls_conf(self,bbox_detections,odom_rosmsg,detection_threshold,i
                 bbox_object.x += x_offset
                 bbox_object.y += y_offset
 
-            theta = bbox_object.o + self.angle_bb # self.ego_orientation_cumulative_diff # Orientation angle (KITTI)
-            # + math.pi/2 if using AB4COGT2SORT
-            # + self.ego_orientation_cumulative_diff if using PointPillars
-            beta = np.arctan2(bbox_object.x-self.ego_vehicle_x,self.ego_vehicle_y-bbox_object.y) # Observation angle (KITTI)
-            #print("theta det: ", theta)
-            # Translate real-world corner coordinates to top-left corner of the grid
+                theta = bbox_object.o # self.ego_orientation_cumulative_diff # Orientation angle (KITTI)
+                # + math.pi/2 if using AB4COGT2SORT
+                # + self.ego_orientation_cumulative_diff if using PointPillars
+                beta = np.arctan2(bbox_object.x-self.ego_vehicle_x,self.ego_vehicle_y-bbox_object.y) # Observation angle (KITTI)
 
-            cxy = np.array([]) # Points camera (object coordinates and object centroid)
-            lidar_points_centroid = np.array([])
+            # Calculate bounding box dimensions
 
-            for i in range(5): 
-                x, y = 0, 0
-                if (i<4):
-                    x, y = bbox_object.x_corners[i], bbox_object.y_corners[i] # Object BEV corners                    
-                else:
-                    x, y = bbox_object.x, bbox_object.y # Object centroid
+            w = math.sqrt(pow(bbox_object.x_corners[3]-bbox_object.x_corners[1],2)+pow(bbox_object.y_corners[3]-bbox_object.y_corners[1],2))
+            l = math.sqrt(pow(bbox_object.x_corners[0]-bbox_object.x_corners[1],2)+pow(bbox_object.y_corners[0]-bbox_object.y_corners[1],2))
 
-                aux_points = np.array([[x], [y], [0], [1]])
-                points_camera_aux = np.dot(self.tf_bevtl2bevcenter_m,aux_points)
+            # Translate local to global coordinates
 
-                if i == 0:
-                    cxy = points_camera_aux[:2]
-                else:
-                    cxy = np.concatenate((cxy,points_camera_aux[:2]))
+            aux_array = np.zeros((1,9))
+            aux_array[0,4] = bbox_object.o
+            aux_array[0,7:] = bbox_object.x, bbox_object.y
 
-                if (i==4):
-                    # BEV camera frame to LiDAR frame 
-                    
-                    lidar_points_centroid = np.dot(self.tf_lidar2bev,aux_points)
-
-            cxy = cxy.reshape(cxy.shape[0],1)
-
-            for i in range(cxy.shape[0]): # 1st coordinate: x=0,y=1. 2nd: 2,3. 3rd: 4,5. 4th: 6,7. Centroid: 8,9
-                if (i%2 == 0):
-                    cxy[i,0] = cxy[i,0]*(self.shapes[3]/self.shapes[1])
-                else:
-                    cxy[i,0] = cxy[i,0]*(self.shapes[2]/self.shapes[0])
-            
-            
-            # Object length, width and centroid in pixels
-            LiDAR_centroid = lidar_points_centroid
-
-            l_px = math.sqrt((cxy[6,0]-cxy[2,0])**2 + (cxy[7,0]-cxy[3,0])**2)
-            w_px = math.sqrt((cxy[0,0]-cxy[2,0])**2 + (cxy[1,0]-cxy[3,0])**2) 
-            centroid = cxy[8,0],cxy[9,0]
-
-            c = [centroid[0],centroid[1],w_px,l_px,theta]
-            corners = geometric_functions.compute_corners(c)
-
-            # Paint relevant detections (only visualization. It is required to round them)
-    
-            if(self.display):  
-                contour = np.array([])
-                for i in range(4):
-                    cx = int(round(corners[i][0]))
-                    cy = int(round(corners[i][1]))
-                    if i==0:
-                        contour = np.array([cx,cy]).reshape(1,2)
-                    else:
-                        c = np.array([cx,cy]).reshape(1,2)
-                        contour = np.concatenate((contour,c))
-                centroid = int(round(centroid[0])),int(round(centroid[1]))
-                my_thickness = 2
-                geometric_functions.draw_rotated(contour,centroid,img,my_thickness)
-            
+            current_pos = store_global_coordinates(self.tf_map2lidar,aux_array)
+     
             if k == 0:
-                bboxes = np.array([[centroid[0], centroid[1], 
-                                    w_px, l_px,
+                bboxes = np.array([[current_pos[0,0],current_pos[1,0], 
+                                    w, l,
                                     theta, beta,
                                     bbox_object.score,
-                                    LiDAR_centroid[0,0],LiDAR_centroid[1,0]]])
+                                    bbox_object.x,bbox_object.y]])
                 
                 types = np.array([bbox_object.type])
             else:
-                bbox = np.array([[centroid[0], centroid[1], 
-                                  w_px, l_px,
-                                  theta, beta,
-                                  bbox_object.score,
-                                  LiDAR_centroid[0,0],LiDAR_centroid[1,0]]])
+                bbox = np.array([[current_pos[0,0],current_pos[1,0], 
+                                w, l,
+                                theta, beta,
+                                bbox_object.score,
+                                bbox_object.x,bbox_object.y]])
 
                 type_object = np.array([bbox_object.type])
                 bboxes = np.concatenate([bboxes,bbox])
