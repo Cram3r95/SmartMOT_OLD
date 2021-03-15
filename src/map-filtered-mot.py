@@ -596,13 +596,13 @@ def main():
     rospy.init_node('map_filtered_mot_node', anonymous=True)
     
     args = []
-    display = rospy.get_param('t4ac/map-filtered-mot/display')
+    display = rospy.get_param('/t4ac/map-filtered-mot/display')
     args.append(display)
-    trajectory_forecasting = rospy.get_param('t4ac/map-filtered-mot/trajectory-forecasting')
+    trajectory_forecasting = rospy.get_param('/t4ac/map-filtered-mot/trajectory-forecasting')
     args.append(trajectory_forecasting)
-    use_ros = rospy.get_param('t4ac/map-filtered-mot/use-ros')
+    use_ros = rospy.get_param('/t4ac/map-filtered-mot/use-ros')
     args.append(use_ros)
-    use_grid = rospy.get_param('t4ac/map-filtered-mot/use-grid')
+    use_grid = rospy.get_param('/t4ac/map-filtered-mot/use-grid')
     args.append(use_grid)
     rc_max = rospy.get_param("/controller/rc_max")
     args.append(rc_max)
